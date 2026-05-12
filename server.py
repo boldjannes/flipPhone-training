@@ -40,6 +40,20 @@ class PredictResponse(BaseModel):
     probabilities: dict[str, float]
 
 
+class EmbedRecording(BaseModel):
+    id: str
+    samples: list[Sample]
+
+
+class BatchEmbedRequest(BaseModel):
+    recordings: list[EmbedRecording]
+
+
+class EmbedResult(BaseModel):
+    id: str
+    features: list[float] | None
+
+
 # ── Load model ──────────────────────────────────────────────────────
 
 def load_model():
@@ -83,6 +97,22 @@ def predict(req: PredictRequest):
         confidence=round(float(proba[pred_idx]), 4),
         probabilities={name: round(float(p), 4) for name, p in zip(le.classes_, proba)},
     )
+
+
+@app.post("/batch_embed", response_model=list[EmbedResult])
+def batch_embed(req: BatchEmbedRequest):
+    results = []
+    for rec in req.recordings:
+        try:
+            if len(rec.samples) < 2:
+                raise ValueError("need at least 2 samples")
+            df = pd.DataFrame([s.model_dump() for s in rec.samples])
+            feats = extract_features(df)
+            vec = [float(feats[col]) for col in feature_cols]
+            results.append(EmbedResult(id=rec.id, features=vec))
+        except Exception:
+            results.append(EmbedResult(id=rec.id, features=None))
+    return results
 
 
 if __name__ == "__main__":

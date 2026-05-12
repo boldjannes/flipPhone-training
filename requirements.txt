@@ -4,3 +4,6 @@ scikit-learn
 requests
 fastapi
 uvicorn
+plotly
+dash
+umap-learn
