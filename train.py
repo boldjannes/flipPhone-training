@@ -25,6 +25,29 @@ from sklearn.preprocessing import LabelEncoder, StandardScaler
 DATA_PATH = os.path.join(os.path.dirname(__file__), "data", "dataset.csv")
 MODEL_DIR = os.path.join(os.path.dirname(__file__), "models")
 
+
+# ── 3-D embedding ────────────────────────────────────────────────────
+
+
+def embed_3d(X: np.ndarray, method: str = "umap", seed: int = 42) -> np.ndarray:
+    """Reduce feature matrix X to 3 dimensions via UMAP or PCA."""
+    from sklearn.preprocessing import StandardScaler
+
+    Xs = StandardScaler().fit_transform(X)
+
+    if method == "umap":
+        try:
+            import umap
+
+            return umap.UMAP(n_components=3, random_state=seed, n_neighbors=15, min_dist=0.1).fit_transform(Xs)
+        except ImportError:
+            print("umap-learn not found, falling back to PCA.")
+
+    from sklearn.decomposition import PCA
+
+    return PCA(n_components=3, random_state=seed).fit_transform(Xs)
+
+
 # ── Trick selection ─────────────────────────────────────────────────
 # Only these tricks (classes) will be used for training.
 # Comment out or remove entries to exclude them.

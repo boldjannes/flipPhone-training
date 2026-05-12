@@ -15,7 +15,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from train import extract_features
+from train import embed_3d, extract_features
 
 MODEL_PATH = os.path.join(os.path.dirname(__file__), "models", "rf_model.pkl")
 
@@ -49,9 +49,11 @@ class BatchEmbedRequest(BaseModel):
     recordings: list[EmbedRecording]
 
 
-class EmbedResult(BaseModel):
+class EmbedCoord(BaseModel):
     id: str
-    features: list[float] | None
+    x: float
+    y: float
+    z: float
 
 
 # ── Load model ──────────────────────────────────────────────────────
@@ -99,20 +101,30 @@ def predict(req: PredictRequest):
     )
 
 
-@app.post("/batch_embed", response_model=list[EmbedResult])
+@app.post("/batch_embed", response_model=list[EmbedCoord])
 def batch_embed(req: BatchEmbedRequest):
-    results = []
+    valid_ids: list[str] = []
+    valid_vecs: list[list[float]] = []
+
     for rec in req.recordings:
         try:
             if len(rec.samples) < 2:
                 raise ValueError("need at least 2 samples")
             df = pd.DataFrame([s.model_dump() for s in rec.samples])
             feats = extract_features(df)
-            vec = [float(feats[col]) for col in feature_cols]
-            results.append(EmbedResult(id=rec.id, features=vec))
+            valid_ids.append(rec.id)
+            valid_vecs.append([float(feats[col]) for col in feature_cols])
         except Exception:
-            results.append(EmbedResult(id=rec.id, features=None))
-    return results
+            pass  # omit this recording from results
+
+    if not valid_ids:
+        return []
+
+    coords = embed_3d(np.array(valid_vecs), method="umap", seed=42)
+    return [
+        EmbedCoord(id=rid, x=float(c[0]), y=float(c[1]), z=float(c[2]))
+        for rid, c in zip(valid_ids, coords)
+    ]
 
 
 if __name__ == "__main__":

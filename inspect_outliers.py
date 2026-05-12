@@ -18,33 +18,11 @@ import os
 import numpy as np
 import pandas as pd
 from dash import Dash, Input, Output, State, callback_context, dash_table, dcc, html
-from sklearn.preprocessing import StandardScaler
 
-from train import DATA_PATH, extract_features, load_features
+from train import DATA_PATH, embed_3d, extract_features, load_features
 
 AUGMENTED_PATH = os.path.join(os.path.dirname(__file__), "data", "dataset_augmented.csv")
 DEFAULT_DATA_PATH = AUGMENTED_PATH if os.path.exists(AUGMENTED_PATH) else DATA_PATH
-
-# ── Embedding ─────────────────────────────────────────────────────────
-
-
-def embed_3d(X: np.ndarray, method: str, seed: int) -> np.ndarray:
-    scaler = StandardScaler()
-    Xs = scaler.fit_transform(X)
-
-    if method == "umap":
-        try:
-            import umap
-
-            reducer = umap.UMAP(n_components=3, random_state=seed, n_neighbors=15, min_dist=0.1)
-            return reducer.fit_transform(Xs)
-        except ImportError:
-            print("umap-learn not found, falling back to PCA.")
-
-    from sklearn.decomposition import PCA
-
-    return PCA(n_components=3, random_state=seed).fit_transform(Xs)
-
 
 # ── Color map ─────────────────────────────────────────────────────────
 
