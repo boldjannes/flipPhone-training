@@ -232,7 +232,17 @@ def _run_training(
 
         if FLIPPHONE_URL and FLIPPHONE_API_KEY:
             from fetch_data import fetch as _fetch_data
-            _fetch_data(FLIPPHONE_URL, FLIPPHONE_API_KEY)
+            try:
+                _fetch_data(FLIPPHONE_URL, FLIPPHONE_API_KEY)
+            except Exception as fetch_err:
+                raise RuntimeError(
+                    f"Failed to fetch dataset from {FLIPPHONE_URL}: {fetch_err}"
+                ) from fetch_err
+        elif not os.path.exists(_DATA_PATH):
+            raise RuntimeError(
+                f"No dataset at {_DATA_PATH} and FLIPPHONE_URL / FLIPPHONE_API_KEY are not "
+                "configured. Set these environment variables on the training server."
+            )
 
         feat_df, feature_cols = load_features(
             data_path=_DATA_PATH,
