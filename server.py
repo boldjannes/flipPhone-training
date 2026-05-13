@@ -26,7 +26,7 @@ from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import LabelEncoder, StandardScaler
 from sklearn.svm import SVC
 
-from train import DATA_PATH, MODEL_DIR, embed_3d, extract_features, load_features
+from train import DATA_PATH, MODEL_DIR, embed_3d, extract_features, fetch_tricks, load_features
 
 # ── Paths ─────────────────────────────────────────────────────────────
 
@@ -244,9 +244,10 @@ def _run_training(
                 "configured. Set these environment variables on the training server."
             )
 
+        resolved_tricks = tricks or [t["id"] for t in fetch_tricks(FLIPPHONE_URL or None)]
         feat_df, feature_cols = load_features(
             data_path=_DATA_PATH,
-            selected_tricks=tricks,
+            selected_tricks=resolved_tricks or None,
             selected_collectors=source_users,
         )
 
@@ -341,6 +342,16 @@ app.add_middleware(
     allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
+
+
+# ── Trick endpoints ───────────────────────────────────────────────────
+
+@app.get("/tricks")
+def list_tricks():
+    tricks = fetch_tricks(FLIPPHONE_URL or None)
+    if not tricks:
+        raise HTTPException(status_code=503, detail="No trick list available")
+    return tricks
 
 
 # ── Training endpoints ────────────────────────────────────────────────

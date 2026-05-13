@@ -15,7 +15,9 @@ from sklearn.model_selection import train_test_split
 from sklearn.neural_network import MLPClassifier
 from sklearn.preprocessing import LabelEncoder, StandardScaler
 
-from train import SELECTED_COLLECTORS, SELECTED_TRICKS, MODEL_DIR, load_features
+import os
+
+from train import MODEL_DIR, fetch_tricks, load_features
 
 # ── Model definitions ────────────────────────────────────────────────
 # Each entry: (name, MLPClassifier kwargs)
@@ -42,19 +44,18 @@ def print_confusion(cm: np.ndarray, class_names: list[str]) -> None:
 
 
 def main() -> None:
+    url = os.environ.get("FLIPPHONE_URL", "")
+    tricks = fetch_tricks(url or None)
+    selected_tricks = [t["id"] for t in tricks] if tricks else None
+
     print("Loading data …")
     try:
-        feat_df, feature_cols = load_features(
-            selected_tricks=SELECTED_TRICKS,
-            selected_collectors=SELECTED_COLLECTORS,
-        )
+        feat_df, feature_cols = load_features(selected_tricks=selected_tricks)
     except (FileNotFoundError, ValueError) as e:
         print(e)
         return
 
     print(f"  {feat_df['trick'].value_counts().sum()} recordings, {feat_df['trick'].nunique()} tricks")
-    if SELECTED_COLLECTORS:
-        print(f"  Selected collectors: {SELECTED_COLLECTORS}")
 
     X = feat_df[feature_cols].values
     le = LabelEncoder()

@@ -48,34 +48,28 @@ def embed_3d(X: np.ndarray, method: str = "umap", seed: int = 42) -> np.ndarray:
     return PCA(n_components=3, random_state=seed).fit_transform(Xs)
 
 
-# ── Trick selection ─────────────────────────────────────────────────
-# Only these tricks (classes) will be used for training.
-# Comment out or remove entries to exclude them.
-SELECTED_TRICKS = [
-    "Kickflip",
-    "Heelflip",
-    "FS Shuvit",
-    "FS 360 Shuvit",
-    "BS Shuvit",
-    "BS 360 Shuvit",
-    "Treflip",
-    #"Double Heelflip",
-    #"Double Kickflip",
-    #"FS 540 Shuvit",
-    #"BS 540 Shuvit",
-    #"FS 720 Shuvit",
-    #"BS 720 Shuvit",
-    #"Late Kickflip",
-]
+# ── Trick helpers ────────────────────────────────────────────────────
 
-# ── Collector filter ─────────────────────────────────────────────────
-# Only recordings from these collectors will be used.
-# Set to None (or empty list) to include all collectors.
-#SELECTED_COLLECTORS = None
-SELECTED_COLLECTORS = [
-     "jannes",
-     "synthetic",  # Include synthetic data if generated
- ]
+
+def _norm(s: str) -> str:
+    """Canonical slug: lowercase, spaces/hyphens → underscores."""
+    return s.strip().lower().replace(" ", "_").replace("-", "_")
+
+
+def fetch_tricks(flipphone_url: str | None = None) -> list[dict]:
+    """Return tricks from the backend API or fall back to the local CSV.
+
+    Each entry: {"id": "kickflip", "name": "Kickflip"}
+    """
+    if flipphone_url:
+        import requests
+        resp = requests.get(f"{flipphone_url}/game/api/tricks", timeout=10)
+        resp.raise_for_status()
+        return resp.json()
+    if os.path.exists(DATA_PATH):
+        df = pd.read_csv(DATA_PATH, usecols=["trick"])
+        return [{"id": _norm(t), "name": t} for t in sorted(df["trick"].unique())]
+    return []
 
 
 # ── Feature extraction ──────────────────────────────────────────────
@@ -136,7 +130,8 @@ def load_features(
     df = pd.read_csv(data_path)
 
     if selected_tricks:
-        df = df[df["trick"].isin(selected_tricks)]
+        normalized = {_norm(t) for t in selected_tricks}
+        df = df[df["trick"].apply(_norm).isin(normalized)]
         if df.empty:
             raise ValueError(f"No data found for selected tricks: {selected_tricks}")
 
@@ -294,25 +289,34 @@ def main() -> None:
     parser.add_argument("--data", default=None,
                         help="Override CSV path (default: data/dataset.csv or dataset_augmented.csv)")
     parser.add_argument("--seed", type=int, default=42, help="Random seed (default: 42)")
+    parser.add_argument("--tricks", nargs="*", default=None,
+                        help="Tricks to train on (slugs). Default: all from backend or CSV.")
+    parser.add_argument("--url", default=os.environ.get("FLIPPHONE_URL", ""),
+                        help="FlipPhone server URL (overrides FLIPPHONE_URL env var)")
     args = parser.parse_args()
 
     data_path = args.data or DATA_PATH
+
+    # Resolve trick list: CLI flag → backend API → all in CSV
+    if args.tricks:
+        selected_tricks = args.tricks
+    else:
+        tricks = fetch_tricks(args.url or None)
+        selected_tricks = [t["id"] for t in tricks] if tricks else None
 
     print("Loading data …")
     try:
         feat_df, feature_cols = load_features(
             data_path=data_path,
-            selected_tricks=SELECTED_TRICKS,
-            selected_collectors=SELECTED_COLLECTORS,
+            selected_tricks=selected_tricks,
         )
     except (FileNotFoundError, ValueError) as e:
         print(e)
         return
 
     print(f"  {feat_df['trick'].value_counts().sum()} recordings, {feat_df['trick'].nunique()} tricks")
-    print(f"  Selected tricks: {SELECTED_TRICKS}")
-    if SELECTED_COLLECTORS:
-        print(f"  Selected collectors: {SELECTED_COLLECTORS}")
+    if selected_tricks:
+        print(f"  Tricks: {selected_tricks}")
     print("\nRecordings per trick:")
     for trick, count in feat_df["trick"].value_counts().items():
         print(f"  {trick}: {count}")
