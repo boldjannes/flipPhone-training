@@ -434,6 +434,41 @@ def get_model(run_id: int):
     return d
 
 
+@app.get("/models/{run_id}/metrics")
+def get_model_metrics(run_id: int):
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT metrics_json FROM training_runs WHERE id = ?", (run_id,)
+        ).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Run not found")
+    raw = row["metrics_json"]
+    if not raw:
+        raise HTTPException(status_code=404, detail="No metrics available for this run")
+    stored = json.loads(raw)
+    report = stored.get("classification_report", {})
+    result: dict = {
+        "accuracy":  stored.get("accuracy"),
+        "precision": report.get("macro avg", {}).get("precision"),
+        "recall":    report.get("macro avg", {}).get("recall"),
+        "f1":        report.get("macro avg", {}).get("f1-score"),
+    }
+    skip = {"accuracy", "macro avg", "weighted avg"}
+    per_class = {
+        cls: {
+            "precision": vals.get("precision"),
+            "recall":    vals.get("recall"),
+            "f1":        vals.get("f1-score"),
+            "support":   vals.get("support"),
+        }
+        for cls, vals in report.items()
+        if cls not in skip and isinstance(vals, dict)
+    }
+    if per_class:
+        result["per_class"] = per_class
+    return result
+
+
 @app.post("/models/{run_id}/activate", response_model=ActivateResponse)
 def activate_model(run_id: int):
     with get_db() as conn:
