@@ -19,7 +19,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import f1_score
+from sklearn.metrics import classification_report, f1_score
 from sklearn.model_selection import train_test_split
 from sklearn.neural_network import MLPClassifier
 from sklearn.pipeline import Pipeline
@@ -29,6 +29,9 @@ from sklearn.svm import SVC
 from train import DATA_PATH, MODEL_DIR, embed_3d, extract_features, load_features
 
 # ── Paths ─────────────────────────────────────────────────────────────
+
+FLIPPHONE_URL = os.environ.get("FLIPPHONE_URL", "").rstrip("/")
+FLIPPHONE_API_KEY = os.environ.get("FLIPPHONE_API_KEY", "")
 
 DB_PATH = os.path.join(os.path.dirname(__file__), "models.db")
 DEFAULT_MODEL_PATH = os.path.join(os.path.dirname(__file__), "models", "rf_model.pkl")
@@ -226,6 +229,10 @@ def _run_training(
 
     try:
         _db("UPDATE training_runs SET status='running', started_at=? WHERE id=?", (now(), run_id))
+
+        if FLIPPHONE_URL and FLIPPHONE_API_KEY:
+            from fetch_data import fetch as _fetch_data
+            _fetch_data(FLIPPHONE_URL, FLIPPHONE_API_KEY)
 
         feat_df, feature_cols = load_features(
             data_path=_DATA_PATH,
