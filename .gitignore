@@ -9,6 +9,8 @@ venv/
 
 # Models
 models/*.joblib
+models/*.pkl
+models.db
 
 # Jupyter
 .ipynb_checkpoints/
