@@ -469,6 +469,37 @@ def get_model_metrics(run_id: int):
     return result
 
 
+@app.delete("/models/{run_id}")
+def delete_model(run_id: int):
+    with get_db() as conn:
+        active_run_id = _get_active_run_id(conn)
+        if active_run_id == run_id:
+            raise HTTPException(status_code=400, detail="Cannot delete the active model")
+        row = conn.execute(
+            "SELECT model_path FROM training_runs WHERE id = ?", (run_id,)
+        ).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Run not found")
+        conn.execute("DELETE FROM training_runs WHERE id = ?", (run_id,))
+    if row["model_path"] and os.path.exists(row["model_path"]):
+        os.remove(row["model_path"])
+    return {"ok": True}
+
+
+@app.get("/active-tricks")
+def get_active_tricks():
+    with get_db() as conn:
+        active_run_id = _get_active_run_id(conn)
+        if not active_run_id:
+            raise HTTPException(status_code=404, detail="No active model")
+        row = conn.execute(
+            "SELECT tricks FROM training_runs WHERE id = ?", (active_run_id,)
+        ).fetchone()
+    if not row or not row["tricks"]:
+        raise HTTPException(status_code=404, detail="Active model has no tricks")
+    return json.loads(row["tricks"])
+
+
 @app.post("/models/{run_id}/activate", response_model=ActivateResponse)
 def activate_model(run_id: int):
     with get_db() as conn:
