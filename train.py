@@ -77,40 +77,52 @@ def fetch_tricks(flipphone_url: str | None = None) -> list[dict]:
 
 def extract_features(group: pd.DataFrame) -> dict:
     """Extract features from a single recording's sample rows."""
-    dt = group["t"].diff().fillna(0) / 1000.0  # seconds
+    t = group["t"].values.astype(float)
+    t0 = t[0]
+    duration_ms = float(t[-1] - t0) if len(t) > 1 else 1.0
+    t_norm = (t - t0) / duration_ms  # normalised time axis [0, 1]
 
     features = {}
 
     # Per-axis statistics
     for col in ["ax", "ay", "az", "gx", "gy", "gz"]:
-        v = group[col]
-        features[f"{col}_mean"] = v.mean()
-        features[f"{col}_std"] = v.std()
-        features[f"{col}_min"] = v.min()
-        features[f"{col}_max"] = v.max()
-        features[f"{col}_range"] = v.max() - v.min()
+        v = group[col].values
+        features[f"{col}_mean"] = float(v.mean())
+        features[f"{col}_std"] = float(v.std())
+        features[f"{col}_min"] = float(v.min())
+        features[f"{col}_max"] = float(v.max())
+        features[f"{col}_range"] = float(v.max() - v.min())
 
     # Acceleration magnitude
-    acc_mag = np.sqrt(group["ax"] ** 2 + group["ay"] ** 2 + group["az"] ** 2)
-    features["acc_mag_mean"] = acc_mag.mean()
-    features["acc_mag_std"] = acc_mag.std()
-    features["acc_mag_max"] = acc_mag.max()
+    acc_mag = np.sqrt(group["ax"].values ** 2 + group["ay"].values ** 2 + group["az"].values ** 2)
+    features["acc_mag_mean"] = float(acc_mag.mean())
+    features["acc_mag_std"]  = float(acc_mag.std())
+    features["acc_mag_max"]  = float(acc_mag.max())
 
     # Rotation magnitude
-    gyro_mag = np.sqrt(group["gx"] ** 2 + group["gy"] ** 2 + group["gz"] ** 2)
-    features["gyro_mag_mean"] = gyro_mag.mean()
-    features["gyro_mag_std"] = gyro_mag.std()
-    features["gyro_mag_max"] = gyro_mag.max()
+    gyro_mag = np.sqrt(group["gx"].values ** 2 + group["gy"].values ** 2 + group["gz"].values ** 2)
+    features["gyro_mag_mean"] = float(gyro_mag.mean())
+    features["gyro_mag_std"]  = float(gyro_mag.std())
+    features["gyro_mag_max"]  = float(gyro_mag.max())
 
-    # Integrated rotation per axis (total angle in radians)
+    # Duration-invariant net rotation per axis:
+    #   trapezoid on normalised time [0,1] → not scaled by window length.
+    #   Sign encodes rotation direction (e.g. heelflip vs kickflip).
+    # Zero-crossings count direction reversals (discriminates flip from spin).
     for axis in ["gx", "gy", "gz"]:
-        features[f"{axis}_total_angle"] = np.trapezoid(group[axis], group["t"] / 1000.0)
+        v = group[axis].values
+        features[f"{axis}_net_angle"]      = float(np.trapezoid(v, t_norm))
+        features[f"{axis}_zero_crossings"] = int(np.sum(np.diff(np.sign(v)) != 0))
 
-    # Duration
-    features["duration_s"] = (group["t"].iloc[-1] - group["t"].iloc[0]) / 1000.0
+    # When (as a fraction of the window) does peak acceleration occur?
+    peak_idx = int(np.argmax(acc_mag))
+    features["peak_time_ratio"] = float(t_norm[peak_idx])
 
-    # Sample count
-    features["sample_count"] = len(group)
+    # Front-load vs back-load: energy ratio between first and second halves.
+    mid = len(acc_mag) // 2
+    e1 = float(np.mean(acc_mag[:mid] ** 2)) if mid > 0 else 0.0
+    e2 = float(np.mean(acc_mag[mid:] ** 2)) if mid > 0 else 0.0
+    features["half_energy_ratio"] = e1 / (e2 + 1e-6)
 
     return features
 
