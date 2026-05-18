@@ -109,6 +109,7 @@ class TrainRequest(BaseModel):
     model_type: str               # "random_forest" | "svm" | "mlp"
     tricks: list[str]
     source_users: list[str] | None = None
+    min_confidence: float | None = None
 
 
 class TrainJobResponse(BaseModel):
@@ -220,6 +221,7 @@ def _run_training(
     tricks: list[str],
     source_users: list[str] | None,
     name: str | None,
+    min_confidence: float | None = None,
 ) -> None:
     def _db(sql, params=()):
         with get_db() as c:
@@ -233,7 +235,7 @@ def _run_training(
         if FLIPPHONE_URL and FLIPPHONE_API_KEY:
             from fetch_data import fetch as _fetch_data
             try:
-                _fetch_data(FLIPPHONE_URL, FLIPPHONE_API_KEY)
+                _fetch_data(FLIPPHONE_URL, FLIPPHONE_API_KEY, min_confidence=min_confidence)
             except Exception as fetch_err:
                 raise RuntimeError(
                     f"Failed to fetch dataset from {FLIPPHONE_URL}: {fetch_err}"
@@ -378,7 +380,7 @@ def start_training(req: TrainRequest):
 
     threading.Thread(
         target=_run_training,
-        args=(run_id, req.model_type, req.tricks, req.source_users, req.name),
+        args=(run_id, req.model_type, req.tricks, req.source_users, req.name, req.min_confidence),
         daemon=True,
     ).start()
 

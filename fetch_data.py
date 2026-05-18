@@ -14,12 +14,15 @@ import requests
 DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
 
 
-def fetch(server_url: str, api_key: str) -> None:
+def fetch(server_url: str, api_key: str, min_confidence: float | None = None) -> None:
     os.makedirs(DATA_DIR, exist_ok=True)
     url = f"{server_url.rstrip('/')}/admin/api/export/csv"
+    params = {}
+    if min_confidence is not None:
+        params["min_confidence"] = min_confidence
 
     print(f"Fetching dataset from {server_url} …")
-    resp = requests.get(url, headers={"X-API-Key": api_key}, timeout=30)
+    resp = requests.get(url, headers={"X-API-Key": api_key}, params=params, timeout=30)
     resp.raise_for_status()
 
     out_path = os.path.join(DATA_DIR, "dataset.csv")
