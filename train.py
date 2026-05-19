@@ -75,8 +75,28 @@ def fetch_tricks(flipphone_url: str | None = None) -> list[dict]:
 # ── Feature extraction ──────────────────────────────────────────────
 
 
+PEAK_WINDOW_MS = 1200.0  # keep ±600 ms around peak acceleration
+
+
+def _trim_to_peak(group: pd.DataFrame) -> pd.DataFrame:
+    """Trim samples to a symmetric window around peak acceleration magnitude.
+
+    This normalises short lab recordings (user-trimmed) and long game-activation
+    captures (200 ms pre + 1400 ms post) to the same ±600 ms window, so features
+    computed on both come from equivalent portions of the trick motion.
+    """
+    t = group["t"].values.astype(float)
+    acc_mag = np.sqrt(group["ax"].values ** 2 + group["ay"].values ** 2 + group["az"].values ** 2)
+    peak_t = t[int(np.argmax(acc_mag))]
+    half = PEAK_WINDOW_MS / 2.0
+    mask = (t >= peak_t - half) & (t <= peak_t + half)
+    trimmed = group[mask]
+    return trimmed if len(trimmed) >= 5 else group
+
+
 def extract_features(group: pd.DataFrame) -> dict:
     """Extract features from a single recording's sample rows."""
+    group = _trim_to_peak(group)
     t = group["t"].values.astype(float)
     t0 = t[0]
     duration_ms = float(t[-1] - t0) if len(t) > 1 else 1.0
@@ -171,9 +191,19 @@ def load_features(
 
 def train_rf(X_train, y_train, seed: int) -> tuple[RandomForestClassifier, float]:
     t0 = time.perf_counter()
-    clf = RandomForestClassifier(n_estimators=100, random_state=seed)
+    clf = RandomForestClassifier(
+        n_estimators=200,
+        class_weight="balanced",  # corrects bias toward majority-class tricks
+        random_state=seed,
+    )
     clf.fit(X_train, y_train)
     return clf, time.perf_counter() - t0
+
+
+def _balanced_sample_weights(y: np.ndarray) -> np.ndarray:
+    """Per-sample weights so every class contributes equally to MLP loss."""
+    from sklearn.utils.class_weight import compute_sample_weight
+    return compute_sample_weight("balanced", y)
 
 
 def train_nn(
@@ -188,7 +218,7 @@ def train_nn(
         max_iter=500,
         random_state=seed,
     )
-    clf.fit(X_s, y_train)
+    clf.fit(X_s, y_train, sample_weight=_balanced_sample_weights(y_train))
     return clf, scaler, time.perf_counter() - t0
 
 
@@ -361,7 +391,7 @@ def main() -> None:
         rf_metrics = report_rf(rf_clf, X_test, y_test, test_ids, feat_df, le, feature_cols)
 
         # Retrain on all data, save
-        rf_clf.fit(X, y)
+        rf_clf.fit(X, y)  # class_weight="balanced" is already set on clf
         model_path = os.path.join(MODEL_DIR, "rf_model.pkl")
         with open(model_path, "wb") as f:
             pickle.dump({"clf": rf_clf, "label_encoder": le, "feature_cols": feature_cols}, f)
